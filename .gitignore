@@ -1,0 +1,5 @@
+# Downloaded, pinned third-party sources; rebuild from references/manifest.json.
+/references/sources/
+# Local installations and runtime state.
+/tooling/pi/node_modules/
+/.local/

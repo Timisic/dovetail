@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "recorded_on": "2026-10-09",
+  "autoload": false,
+  "references": [
+    {
+      "id": "cursor-pstack",
+      "repository": "https://github.com/cursor/plugins.git",
+      "commit": "ccb5507cec1546dc88135c1139c811e6c59115ba",
+      "paths": ["pstack"],
+      "focus": "how / why / teach"
+    },
+    {
+      "id": "mattpocock-teach",
+      "repository": "https://github.com/mattpocock/skills.git",
+      "commit": "b0618bc436ad893b3c5e84e55fba86586d34a404",
+      "paths": ["skills/productivity/teach"],
+      "focus": "teach/SKILL.md"
+    },
+    {
+      "id": "inferhaven-codetrain",
+      "repository": "https://github.com/InferHaven/agent-skills.git",
+      "commit": "eca375fe92a2a64f18f52d97e26a4d39d43254d8",
+      "paths": ["codetrain"],
+      "focus": "codetrain skill and supporting source"
+    },
+    {
+      "id": "coderoad-vscode",
+      "repository": "https://github.com/coderoad/coderoad-vscode.git",
+      "commit": "13cd6cc9755dc115f0e9c2fecb1e2cd7322c785d",
+      "paths": ["."],
+      "focus": "tutorial runner source; separate third-party AGPL reference",
+      "license_warning": "AGPL: do not incorporate into a proprietary implementation without license review."
+    },
+    {
+      "id": "nand2tetris-web-ide",
+      "repository": "https://github.com/nand2tetris/web-ide.git",
+      "commit": "52611ad9bc2a30d329293b0cf58be672d672ac96",
+      "paths": ["."],
+      "focus": "web IDE and exercise/testing source"
+    },
+    {
+      "id": "pi-learning-tutor",
+      "repository": "https://github.com/majorgilles/pi-learning-tutor.git",
+      "commit": "e6eefe7c7388d07fbabad0fbe7a7a011cf69cc0f",
+      "paths": ["."],
+      "focus": "Pi learning extension source and skills"
+    },
+    {
+      "id": "pi-official",
+      "repository": "https://github.com/earendil-works/pi.git",
+      "commit": "abe508e1b89912adde45528136c3221eb69acdd7",
+      "version": "1.1.0",
+      "tag": "v1.1.0",
+      "paths": ["."],
+      "focus": "official source matching installed stable Pi"
+    }
+  ]
+}

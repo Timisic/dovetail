@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+export PI_CODING_AGENT_DIR="${PI_CODING_AGENT_DIR:-$project_root/.local/pi-agent}"
+exec "$project_root/tooling/pi/node_modules/.bin/pi" "$@"
