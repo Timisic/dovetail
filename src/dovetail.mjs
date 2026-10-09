@@ -1,11 +1,9 @@
-import { lstat, mkdir, readFile, realpath, rename, writeFile, unlink } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const fixture = name => new URL(`../lesson/${name}.mjs`, import.meta.url);
-const hash = source => createHash('sha256').update(source).digest('hex');
 const invalid = () => new Error('Dovetail data is incomplete or invalid. Inspect .dovetail before retrying; it was not reset.');
 async function exists(path, directory = false) {
   try {
@@ -14,11 +12,14 @@ async function exists(path, directory = false) {
     return true;
   } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
 }
-async function atomic(path, value) {
-  const temporary = `${path}.tmp`;
-  await writeFile(temporary, value, { flag: 'wx' });
-  try { await rename(temporary, path); }
-  finally { await unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error; }); }
+async function atomic(path, value, beforePublish) {
+  const stage = await mkdtemp(`${path}.tmp-`);
+  try {
+    const payload = join(stage, 'payload');
+    await writeFile(payload, value, { flag: 'wx' });
+    await beforePublish?.();
+    await rename(payload, path);
+  } finally { await rm(stage, { recursive: true, force: true }); }
 }
 
 export class Dovetail {
@@ -39,12 +40,15 @@ export class Dovetail {
     let state;
     try { state = JSON.parse(await readFile(this.checkpoint, 'utf8')); }
     catch { throw invalid(); }
-    if (!state || typeof state !== 'object' || state.version !== 1 || state.lesson !== 'tool-call' || !['active', 'paused'].includes(state.mode)
+    if (!state || typeof state !== 'object' || ![1, 2].includes(state.version) || state.lesson !== 'tool-call' || !['active', 'paused'].includes(state.mode)
       || typeof state.answerUsed !== 'boolean' || (state.lastCheck !== null &&
-        (!state.lastCheck || !/^[a-f0-9]{64}$/.test(state.lastCheck.hash) || typeof state.lastCheck.passed !== 'boolean'
+        (!state.lastCheck || (state.version === 1
+          ? typeof state.lastCheck.hash !== 'string' || !/^[a-f0-9]{64}$/.test(state.lastCheck.hash)
+          : typeof state.lastCheck.source !== 'string') || typeof state.lastCheck.passed !== 'boolean'
           || !['run', 'test'].includes(state.lastCheck.kind)))) throw invalid();
+    if (state.version === 1) state = { ...state, version: 2, lastCheck: null };
     const source = await readFile(this.agent, 'utf8');
-    return { state, source, revision: hash(source), checkedCurrentSource: state.lastCheck?.hash === hash(source) };
+    return { state, source, checkedCurrentSource: state.lastCheck?.source === source };
   }
   async save(state) { await atomic(this.checkpoint, `${JSON.stringify(state, null, 2)}\n`); }
   async evaluate(source, kind, signal) {
@@ -80,16 +84,21 @@ export class Dovetail {
     if (action === 'status' || action === 'inspect') return view;
     if (action === 'start') {
       if (!view) {
-        await mkdir(this.root);
-        await mkdir(this.project);
-        await writeFile(join(this.project, 'agent.mjs'), await readFile(fixture('starter')), { flag: 'wx' });
-        await writeFile(join(this.project, 'checkpoint.json'), JSON.stringify({ version: 1, lesson: 'tool-call', mode: 'active', lastCheck: null, answerUsed: false }), { flag: 'wx' });
+        const stage = await mkdtemp(join(await this.cwd, '.dovetail-init-'));
+        try {
+          const project = join(stage, 'project');
+          await mkdir(project);
+          await writeFile(join(project, 'agent.mjs'), await readFile(fixture('starter')), { flag: 'wx' });
+          await writeFile(join(project, 'checkpoint.json'), JSON.stringify({ version: 2, lesson: 'tool-call', mode: 'active', lastCheck: null, answerUsed: false }), { flag: 'wx' });
+          if (await exists(this.root, true)) throw invalid();
+          await rename(stage, this.root);
+        } finally { await rm(stage, { recursive: true, force: true }); }
         view = await this.load();
       }
       view.state.mode = 'active';
       await this.save(view.state);
       const example = await this.evaluate(view.source, 'run', signal);
-      view.state.lastCheck ??= { hash: view.revision, passed: example.passed, kind: 'run' };
+      view.state.lastCheck ??= { source: view.source, passed: example.passed, kind: 'run' };
       await this.save(view.state);
       return { ...await this.load(), example };
     }
@@ -102,14 +111,18 @@ export class Dovetail {
       return { ...view, answer: await readFile(fixture('answer'), 'utf8') };
     }
     if (action === 'apply') {
-      if (args.expectedRevision !== view.revision) throw new Error('Source changed. Inspect again and apply using the new revision.');
+      if (args.expectedSource !== view.source) throw new Error('Source changed. Inspect again and apply using the source you read.');
       if (typeof args.source !== 'string' || args.source.length > 8000) throw new Error('Provide the complete short agent.mjs source (up to 8000 characters).');
-      await atomic(this.agent, args.source);
+      await atomic(this.agent, args.source, async () => {
+        const current = await this.load();
+        if (!current || args.expectedSource !== current.source) throw new Error('Source changed. Inspect again and apply using the source you read.');
+        if (current.state.mode !== 'active') throw new Error('Dovetail is paused. Use /dovetail start to resume.');
+      });
       view = await this.load();
     } else if (!['run', 'test'].includes(action)) throw new Error('Unknown Dovetail action.');
     const kind = action === 'run' ? 'run' : 'test';
     const result = await this.evaluate(view.source, kind, signal);
-    view.state.lastCheck = { hash: view.revision, passed: result.passed, kind };
+    view.state.lastCheck = { source: view.source, passed: result.passed, kind };
     await this.save(view.state);
     return { ...await this.load(), result };
   }

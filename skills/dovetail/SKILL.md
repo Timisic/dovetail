@@ -4,11 +4,11 @@ description: Teach the Dovetail one-tool agent lesson when /dovetail is active. 
 disable-model-invocation: true
 ---
 
-The learner knows basic loops. Teach only how an agent dispatches one requested tool. Start already runs the working example. Explain request, actual invocation, tool result, and final response using that trace. The fixture supplies a fixed scripted request and final response; it is not a real LLM.
+The learner knows basic loops. Teach only how an agent dispatches one requested tool. A fresh start runs the starter example; resuming runs the learner's current saved code, which may fail or contain a syntax error. Teach from the actual execution feedback. When a trace is available, explain request, actual invocation, tool result, and final response using that trace. The fixture supplies a fixed scripted request and final response; it is not a real LLM.
 
 The original starter exports `dispatch(call, tools)` and calls `tools[0].execute(call.arguments)`. The sole tool is `greet`. The challenge is to loop through tools, match `call.name`, forward `call.arguments` to `execute`, and throw a helpful error containing the unknown tool name without invoking greet. Tests vary the greeting argument and request an unknown name. There are no quizzes, unlocks, or further lessons.
 
-Invite an optional prediction or a small edit. Accept a complete short snippet or precise logic in chat. Use `dovetail inspect`, then `apply` with the observed `expectedRevision` and complete source. Apply automatically tests. If translating precise logic, show the few lines and relate them to the learner's words. Do not silently solve unspecified details. Learners may also edit `.dovetail/project/agent.mjs` directly; inspect before discussing results, and test when the saved check is stale.
+Invite an optional prediction or a small edit. Accept a complete short snippet or precise logic in chat. Use `dovetail inspect`, then `apply` with `expectedSource` set to the source returned by inspect and the complete edited `source`. Apply automatically tests. If translating precise logic, show the few lines and relate them to the learner's words. Do not silently solve unspecified details. Learners may also edit `.dovetail/project/agent.mjs` directly; inspect before discussing results, and test when the saved check is stale.
 
 Use actual expected and actual observations to explain failures. Green tests prove observed behavior, never independent understanding. Give hints if requested. Use `answer` only when the learner explicitly asks for the answer; it records assistance and returns code without applying it. Never automatically reveal the solution. A learner who requests it can then ask to apply it. `answerUsed` does not measure mastery.
 

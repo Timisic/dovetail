@@ -19,15 +19,19 @@ Run these commands from the repository:
 
 ```bash
 mkdir -p .local/verification
-node --test test/*.test.mjs > .local/verification/tests.tap
+node --test --test-reporter=tap test/*.test.mjs > .local/verification/tests.tap
 node test/verify.mjs
 ```
 
 Follow [the one-tool feature map](features/tool-call.md). The Node tests exercise actual learner code and the actual installed Pi extension loader. The RPC helper drives the real installed CLI. It sends only discovery, message inspection, and known `/dovetail` lifecycle commands. An acknowledged prompt alone is insufficient; the helper asserts visible messages, checkpoint files, preserved source, and absence of extension errors and model turns.
 
+The loader tests invoke the registered context handler before and after a same-turn apply, checking fresh source/check facts, one valid hidden request-local teaching message, unchanged input and other messages, no teaching `sendMessage`, and removal while paused or invalid. This is loader-level context evidence; the CLI helper does not run a model turn or exercise the model request conversion.
+
 ## Evidence
 
 Keep `.local/verification/tests.tap`, `rpc-transcript.json`, `rpc-checkpoint.json`, and `rpc-agent.mjs`. The transcript includes requests and responses. The helper saves the checkpoint and learner source before removing temporary workspace state. Tests prove tool invocation, arguments, expected versus actual failure, snippet application, syntax feedback, answer assistance, pause/resume, stale edits, cancellation, timeout, and sentinel preservation.
+
+Retain `review-before.tap` and `review-after.tap` from the prior review and `hash-after.tap` from source comparison verification. Version 1 checkpoints are validated before read-only in-memory migration to version 2; the old check is cleared while active/paused mode, assistance and source bytes survive. Resume records a genuine executed snapshot. Malformed legacy/new and unknown-version checkpoints remain errors without resetting files. A same-length editor change with restored timestamps is rejected and marks the saved check stale; an edit during execution stays stale across a disk-only restart. Storage regressions preserve legacy `.tmp` files and abandoned stages through successful saves and retry. Actual child-process preloads pause filesystem operations for SIGKILL before initial publication and after root visibility. Another preload holds the source staging write until a real filesystem watcher has written an external edit; apply must then reject, preserve editor bytes and checkpoint, clean its owned stage, and allow retry. These checks do not prove strict cross-process compare-and-swap or power-loss durability.
 
 This proof does not measure teaching quality or drive an interactive TUI or Mac. Choosing model metadata for offline CLI startup is not a model request. Check the transcript for `agent_start` and `extension_error`; neither is allowed. Do not add ordinary chat prompts to this verifier.
 

@@ -1,0 +1,45 @@
+digraph Dovetail {
+  graph [rankdir=LR, bgcolor="#ffffff", pad=0.5, nodesep=0.55, ranksep=0.8,
+    fontname="Noto Sans CJK SC", fontsize=24, labelloc=t,
+    label="Dovetail · 一个工具调用练习\n", splines=polyline];
+  node [shape=box, style="rounded,filled", fillcolor="#f8fafc", color="#cbd5e1",
+    fontname="Noto Sans CJK SC", fontsize=15, margin="0.20,0.15", penwidth=1.5];
+  edge [fontname="Noto Sans CJK SC", fontsize=12, color="#64748b", arrowsize=0.8];
+
+  user [label="用户\n给代码片段或明确逻辑\n可请求答案，也可直接编辑", fillcolor="#e0f2fe", color="#0284c7"];
+  pi [label="Pi 宿主\n对话：解释与调用学习工具\n命令：/dovetail start | status | off", fillcolor="#f1f5f9"];
+
+  subgraph cluster_runtime {
+    label="Dovetail 项目包"; fontsize=18; color="#94a3b8"; style="rounded"; margin=24;
+    extension [label="Pi 适配\nextension.ts\n注册命令和 dovetail 工具\ncontext 注入教学方法与当前事实", fillcolor="#eef2ff", color="#6366f1"];
+    owner [label="练习状态与执行\nsrc/dovetail.mjs\n排队、源码检查、应用代码、自动测试\n暂停、恢复与保存检查记录", fillcolor="#ecfdf5", color="#059669"];
+    runner [label="新 Node 子进程\nlesson/runner.mjs\n执行源码快照 → dispatch → greet\n检查实际调用与参数，生成反馈", fillcolor="#ecfdf5", color="#059669"];
+    skill [label="教学方法\nskills/dovetail/SKILL.md\n可选预测、按需提示、显式答案\n暂停时不注入教学上下文", fillcolor="#fef3c7", color="#d97706"];
+    fixtures [label="固定练习素材\nlesson/starter.mjs / answer.mjs\n初始代码与按需返回的答案", fillcolor="#f8fafc"];
+    {rank=same; extension; skill}
+    {rank=same; owner; fixtures}
+  }
+
+  subgraph cluster_disk {
+    label="当前工作目录 · .dovetail/project"; fontsize=17; color="#94a3b8"; style="rounded,dashed"; margin=20;
+    source [label="agent.mjs\n用户当前代码", shape=note, fillcolor="#f0f9ff", color="#0284c7"];
+    checkpoint [label="checkpoint.json\nactive / paused、答案帮助标记\n最近检查及其已测试源码\n记录进度，不代表掌握", shape=note, fillcolor="#f0f9ff", color="#0284c7"];
+    {rank=same; source; checkpoint}
+  }
+
+  user -> pi [label="对话 / 命令"];
+  pi -> extension [label="命令处理 / 学习工具调用"];
+  extension -> owner [label="perform(action, args, signal)", dir=both];
+  owner -> runner [label="源码快照 / run 或 test", dir=both];
+  extension -> pi [label="可见反馈 / 工具结果", constraint=false, color="#059669"];
+  pi -> user [label="解释与观察结果", constraint=false, color="#059669"];
+  skill -> extension [label="每次上下文读取时载入", style=dashed];
+  fixtures -> owner [label="首次初始化 / 显式答案", style=dashed];
+  owner -> source [label="读取 / 源码检查后替换", dir=both];
+  owner -> checkpoint [label="读取 / 保存 / 重启恢复", dir=both];
+  user -> source [label="可选：编辑器直接修改", style=dashed, constraint=false, color="#0284c7"];
+
+  limits [shape=plain, fontsize=13,
+    label="实际边界\n示例请求与最终回复固定；正常聊天使用你已有的 Pi 模型。\n子进程有取消、2 秒超时和输出上限；可信学习代码，不是沙箱。\n每个工作目录一个 Pi 进程；源码保护是乐观检查，不是外部编辑器的严格互斥。"];
+  {rank=same; runner; limits}
+}

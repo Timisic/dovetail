@@ -4,3 +4,4 @@
 /tooling/pi/node_modules/
 /.local/
 /.dovetail/
+/.dovetail-init-*/

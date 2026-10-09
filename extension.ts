@@ -11,8 +11,11 @@ export default function (pi: ExtensionAPI) {
     if (owner && await owner.cwd !== cwd) throw new Error('Workspace changed. Restart Pi in the intended workspace before using Dovetail.');
     return owner ??= new Dovetail(cwd);
   };
-  const availability = (active: boolean) => pi.setActiveTools([
-    ...pi.getActiveTools().filter(name => name !== 'dovetail'), ...(active ? ['dovetail'] : [])]);
+  const availability = (active: boolean) => {
+    const tools = pi.getActiveTools();
+    if (tools.includes('dovetail') !== active) pi.setActiveTools([
+      ...tools.filter(name => name !== 'dovetail'), ...(active ? ['dovetail'] : [])]);
+  };
   const visible = (content: string) => pi.sendMessage({ customType: 'dovetail', content, display: true }, { triggerTurn: false });
   const summary = async (service: Dovetail, view) => !view ? '尚未开始。输入 /dovetail start。' :
     `Dovetail ${view.state.mode === 'active' ? '进行中' : '已暂停'}。\n代码文件：${join(await service.cwd, '.dovetail/project/agent.mjs')}\n最近检查：${!view.state.lastCheck ? '未检查' : `${view.state.lastCheck.kind} ${view.state.lastCheck.passed ? '通过' : '未通过'}${view.checkedCurrentSource ? '' : '，代码已改变，请重新测试'}`}。${view.state.answerUsed ? '\n已查看过答案。' : ''}`;
@@ -38,7 +41,7 @@ export default function (pi: ExtensionAPI) {
     description: 'Inspect, run, test, or apply the learner’s one-tool dispatcher. Return the answer only when explicitly requested.',
     parameters: Type.Object({
       action: Type.Union(['inspect', 'run', 'test', 'apply', 'answer'].map(value => Type.Literal(value))),
-      expectedRevision: Type.Optional(Type.String()), source: Type.Optional(Type.String()),
+      expectedSource: Type.Optional(Type.String()), source: Type.Optional(Type.String()),
     }),
     async execute(_id, args, signal, _update, ctx) {
       try {
@@ -58,21 +61,19 @@ export default function (pi: ExtensionAPI) {
       if (view) visible('Dovetail 已从文件恢复。\n' + await summary(service, view));
     } catch (error) { availability(false); visible(String(error.message)); }
   });
-  pi.on('before_agent_start', async (_event, ctx) => {
-    try {
-      const view = await (await get(ctx)).perform('status');
-      availability(view?.state.mode === 'active');
-      if (view?.state.mode === 'active') return { message: {
-      customType: 'dovetail-teaching', display: false,
-      content: await readFile(new URL('./skills/dovetail/SKILL.md', import.meta.url), 'utf8') + '\nCurrent facts:\n' + describe(view),
-      } };
-    } catch (error) { availability(false); visible(String(error.message)); }
-  });
   pi.on('context', async (event, ctx) => {
-    let active = false;
-    try { active = (await (await get(ctx)).perform('status'))?.state.mode === 'active'; } catch {}
+    let content;
+    try {
+      const skill = await readFile(new URL('./skills/dovetail/SKILL.md', import.meta.url), 'utf8');
+      const view = await (await get(ctx)).perform('status');
+      if (view?.state.mode === 'active') content = skill + '\nCurrent facts:\n' + describe(view);
+    } catch (error) { visible(String(error.message)); }
+    availability(content !== undefined);
     const teaching = message => message.role === 'custom' && message.customType === 'dovetail-teaching';
-    const latest = active ? event.messages.findLastIndex(teaching) : -1;
-    return { messages: event.messages.filter((message, index) => !teaching(message) || index === latest) };
+    const messages = event.messages.filter(message => !teaching(message));
+    if (content !== undefined) messages.push({
+      role: 'custom', customType: 'dovetail-teaching', content, display: false, timestamp: Date.now(),
+    });
+    return { messages };
   });
 }
