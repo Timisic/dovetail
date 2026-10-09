@@ -1,0 +1,7 @@
+{
+  "name": "dovetail",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test test/*.test.mjs", "verify": "node test/verify.mjs" },
+  "pi": { "extensions": ["./extension.ts"], "skills": ["./skills/dovetail"] }
+}

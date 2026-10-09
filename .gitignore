@@ -3,3 +3,4 @@
 # Local installations and runtime state.
 /tooling/pi/node_modules/
 /.local/
+/.dovetail/
