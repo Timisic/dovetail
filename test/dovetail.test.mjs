@@ -4,7 +4,7 @@ import { mkdtemp, readFile, readdir, writeFile, mkdir, symlink, rm, stat, utimes
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { watch, writeFileSync } from 'node:fs';
+import { watch, writeFileSync, realpathSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { Dovetail } from '../src/dovetail.mjs';
@@ -313,11 +313,14 @@ test('a source-stage creation editor write is rejected without changing its sour
   const started = await owner.perform('start');
   const checkpoint = await readFile(state, 'utf8');
   const edited = 'export function dispatch() { return "external editor change"; }';
+  // Dovetail realpath()s the workspace before staging. The payload path is that
+  // canonical file plus ".tmp-…/payload", not the mkdtemp path when tmp is a symlink.
+  const canonicalAgent = realpathSync(agent);
   const preload = join(cwd, 'preload.mjs');
   await writeFile(preload, `
 import fs from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
-const agent = ${JSON.stringify(agent)};
+const agent = ${JSON.stringify(canonicalAgent)};
 const write = fs.writeFile;
 fs.writeFile = async (path, ...args) => {
   const result = await write(path, ...args);
@@ -332,7 +335,7 @@ syncBuiltinESMExports();
   let sawEdit = false;
   let watcher;
   const editorWrite = new Promise(resolve => {
-    watcher = watch(join(agent, '..'), (event, name) => {
+    watcher = watch(join(canonicalAgent, '..'), (event, name) => {
       if (event === 'rename' && (name === 'agent.mjs.tmp' || name?.startsWith('agent.mjs.tmp-')) && !sawEdit) {
         writeFileSync(agent, edited);
         sawEdit = true;
