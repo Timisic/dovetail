@@ -382,11 +382,14 @@ test('killed bootstrap leaves either no published root or a complete restartable
       const preload = join(cwd, 'preload.mjs');
       await writeFile(preload, `
 import fs from 'node:fs/promises';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, realpathSync } from 'node:fs';
+import path from 'node:path';
 import { syncBuiltinESMExports } from 'node:module';
 const point = ${JSON.stringify(point)};
 const marker = ${JSON.stringify(marker)};
-const root = ${JSON.stringify(join(cwd, '.dovetail'))};
+// Dovetail realpath()s the workspace. macOS tmp is /var -> /private/var, so the rename
+// destination is the canonical path, not the path mkdtemp returned.
+const root = path.join(realpathSync(${JSON.stringify(cwd)}), '.dovetail');
 const pause = async () => { writeFileSync(marker, 'ready'); await new Promise(() => {}); };
 const write = fs.writeFile;
 fs.writeFile = async (path, ...args) => {
