@@ -4,7 +4,7 @@ import { mkdtemp, readFile, readdir, writeFile, mkdir, symlink, rm, stat, utimes
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { watch, writeFileSync } from 'node:fs';
+import { watch, writeFileSync, realpathSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { Dovetail } from '../src/dovetail.mjs';
@@ -23,16 +23,31 @@ test('working example, actionable failed challenge, learner code and stale edito
   const started = await owner.perform('start');
   assert.equal(started.state.version, 2);
   assert.equal(Object.hasOwn(started, 'revision'), false);
-  assert.deepEqual(started.example.observations[0].actual, { invocations: [{ name: 'greet', arguments: { name: 'Ada' } }], result: 'Hello, Ada!' });
+  assert.equal(started.example.passed, false);
+  assert.equal(started.state.lastCheck.kind, 'demo');
+  assert.equal(started.state.lastCheck.passed, false);
+  assert.equal(started.state.failedAttempt, false);
+  assert.equal(started.example.observations[0].request.name, 'echo');
+  assert.deepEqual(started.example.observations[0].actual.invocations, [{ name: 'greet', arguments: { text: 'ping' } }]);
+  await assert.rejects(owner.perform('answer'), /prediction or a failed attempt/);
   const failed = await owner.perform('test');
   assert.equal(failed.result.passed, false);
-  assert.deepEqual(failed.result.observations[2].expected, { invocations: [], error: 'an error mentioning weather' });
-  assert.deepEqual(failed.result.observations[2].actual, { invocations: [{ name: 'greet', arguments: { name: 'Ada' } }], result: 'Hello, Ada!' });
+  assert.equal(failed.state.failedAttempt, true);
+  assert.equal(failed.state.lastCheck.kind, 'test');
+  assert.equal(failed.state.lastCheck.passed, false);
+  assert.equal(failed.result.observations[2].request.name, 'echo');
+  assert.equal(failed.result.observations[2].passed, false);
+  assert.deepEqual(failed.result.observations[3].expected, { invocations: [], error: 'an error mentioning weather' });
+  assert.deepEqual(failed.result.observations[4].expected, { invocations: [], error: 'an error mentioning calendar' });
   const applied = await owner.perform('apply', { expectedSource: failed.source, source: solution });
   assert.equal(applied.result.passed, true);
+  assert.equal(applied.state.lastCheck.kind, 'test');
+  assert.equal(applied.state.lastCheck.passed, true);
   assert.deepEqual((await owner.perform('start')).state.lastCheck, applied.state.lastCheck);
   assert.deepEqual(applied.result.observations[1].actual, { invocations: [{ name: 'greet', arguments: { name: 'Lin' } }], result: 'Hello, Lin!' });
-  assert.deepEqual(applied.result.observations[2].actual, { invocations: [], error: 'Unknown tool: weather' });
+  assert.deepEqual(applied.result.observations[2].actual, { invocations: [{ name: 'echo', arguments: { text: 'ping' } }], result: 'ping' });
+  assert.deepEqual(applied.result.observations[3].actual, { invocations: [], error: 'Unknown tool: weather' });
+  assert.deepEqual(applied.result.observations[4].actual, { invocations: [], error: 'Unknown tool: calendar' });
   await utimes(agent, 1700000000, 1700000000);
   const metadata = await stat(agent);
   const edited = solution.replace('Unknown', 'Missing');
@@ -58,8 +73,10 @@ test('syntax feedback, explicit answer, repeated entry and disk-only resume', as
   assert.match(answer.answer, /Unknown tool:/);
   assert.equal(await readFile(agent, 'utf8'), 'export function dispatch( {');
   const restarted = await owner.perform('start');
-  assert.equal(restarted.example.passed, false);
-  assert.match(restarted.example.error, /SyntaxError/);
+  assert.equal(restarted.result.passed, false);
+  assert.match(restarted.result.error, /SyntaxError/);
+  assert.equal(restarted.state.lastCheck.passed, false);
+  assert.equal(restarted.state.lastCheck.kind, 'test');
   const resumed = await new Dovetail(cwd).perform('inspect');
   assert.equal(resumed.source, 'export function dispatch( {');
   assert.equal(resumed.state.answerUsed, true);
@@ -115,7 +132,7 @@ test('valid legacy checkpoints migrate in memory and preserve mode, assistance a
     const legacy = JSON.stringify({ version: 1, lesson: 'tool-call', mode, answerUsed: true,
       lastCheck: { hash: 'a'.repeat(64), passed: true, kind: 'test' } });
     await writeFile(state, legacy);
-    const migrated = { version: 2, lesson: 'tool-call', mode, answerUsed: true, lastCheck: null };
+    const migrated = { version: 2, lesson: 'tool-call', mode, answerUsed: true, lastCheck: null, prediction: null, failedAttempt: false, reflection: null };
     for (const action of ['status', 'inspect']) {
       const view = await new Dovetail(cwd).perform(action);
       assert.deepEqual(view.state, migrated);
@@ -127,7 +144,7 @@ test('valid legacy checkpoints migrate in memory and preserve mode, assistance a
     const resumed = await new Dovetail(cwd).perform('start');
     assert.equal(resumed.example.passed, true);
     assert.deepEqual(resumed.state, { ...migrated, mode: 'active',
-      lastCheck: { source: bytes.toString(), passed: true, kind: 'run' } });
+      lastCheck: { source: bytes.toString(), passed: false, kind: 'demo' } });
     assert.deepEqual(JSON.parse(await readFile(state, 'utf8')), resumed.state);
     assert.deepEqual(await readFile(agent), bytes);
   }
@@ -145,6 +162,7 @@ test('malformed legacy and new checkpoints and unknown versions fail without res
     { ...base, version: 2, lastCheck: { ...check, hash: 'a'.repeat(64) } },
     { ...base, version: 2, lastCheck: { ...check, source: started.source, passed: 'true' } },
     { ...base, version: 3, lastCheck: null },
+    { ...base, version: 2, lastCheck: null, failedAttempt: 'yes' },
   ]) {
     const checkpoint = JSON.stringify(invalid);
     await writeFile(state, checkpoint);
@@ -173,6 +191,9 @@ test('actual Pi loader projects fresh same-turn facts once and pauses only its o
   assert.equal(await new Dovetail(cwd).perform('status'), null);
   await command('start');
   assert.deepEqual(active, ['read', 'bash', 'dovetail']);
+  assert.match(messages.at(-1).message.content, /演示（不是成绩）/);
+  assert.match(messages.at(-1).message.content, /echo/);
+  assert.doesNotMatch(messages.at(-1).message.content, /call\.name|Unknown tool|agent-loop|循环/);
   const user = { role: 'user', content: 'test my loop', timestamp: 1 };
   const unrelated = { role: 'custom', customType: 'other-extension', content: 'keep', display: false, timestamp: 2 };
   const turnStart = extension.handlers.get('before_agent_start')?.[0];
@@ -186,7 +207,9 @@ test('actual Pi loader projects fresh same-turn facts once and pauses only its o
   assert.equal(first.messages.at(-1).customType, 'dovetail-teaching');
   assert.equal(first.messages.at(-1).display, false);
   assert.equal(typeof first.messages.at(-1).timestamp, 'number');
-  const starterFacts = JSON.parse(first.messages.at(-1).content.split('Current facts:\n')[1]);
+  const starterTeaching = first.messages.at(-1).content;
+  assert.doesNotMatch(starterTeaching, /call\.name|Unknown tool|agent-loop|循环按|交给 execute/);
+  const starterFacts = JSON.parse(starterTeaching.split('Current facts:\n')[1]);
   assert.notEqual(starterFacts.source, solution);
   const inspected = await invoke({ action: 'inspect' });
   const applied = await invoke({ action: 'apply', expectedSource: inspected.details.source, source: solution });
@@ -197,8 +220,16 @@ test('actual Pi loader projects fresh same-turn facts once and pauses only its o
   assert.deepEqual(updated.messages.slice(0, -1), [user, unrelated]);
   assert.equal(updated.messages.filter(message => message.customType === 'dovetail-teaching').length, 1);
   const skill = await readFile(new URL('../skills/dovetail/SKILL.md', import.meta.url), 'utf8');
+  assert.doesNotMatch(skill, /call\.name|Unknown tool|agent-loop/);
   assert.equal(updated.messages.at(-1).content.split('\nCurrent facts:\n')[0], skill);
-  const facts = JSON.parse(updated.messages.at(-1).content.split('Current facts:\n')[1]);
+  assert.match(updated.messages.at(-1).content, /agent-loop\.ts/);
+  const factBody = updated.messages.at(-1).content.split('Current facts:\n')[1];
+  const facts = JSON.parse(factBody.slice(0, factBody.lastIndexOf('}') + 1));
+  const legacyRun = JSON.parse(await readFile(join(cwd, '.dovetail/project/checkpoint.json'), 'utf8'));
+  legacyRun.lastCheck = { ...legacyRun.lastCheck, passed: true, kind: 'run' };
+  await writeFile(join(cwd, '.dovetail/project/checkpoint.json'), JSON.stringify(legacyRun));
+  const hidden = await context(updated.messages);
+  assert.doesNotMatch(hidden.messages.at(-1).content, /agent-loop/);
   assert.equal(facts.source, solution);
   assert.equal(facts.state.lastCheck.source, applied.details.source);
   assert.equal(Object.hasOwn(facts, 'revision'), false);
@@ -244,7 +275,7 @@ test('cancellation stops learner code, and editing during a run reports a stale 
   const edit = setTimeout(() => { void writeFile(agent, solution); }, 100);
   const observed = await running;
   clearTimeout(edit);
-  assert.equal(observed.result.passed, true);
+  assert.equal(observed.result.passed, false);
   assert.equal(observed.source, solution);
   assert.equal(observed.checkedCurrentSource, false);
   assert.equal(observed.state.lastCheck.source, slow);
@@ -267,6 +298,7 @@ test('legacy temporary sentinels and abandoned stages do not block saves or retr
   await new Dovetail(cwd).perform('start');
   const applied = await owner.perform('apply', { expectedSource: started.source, source: solution });
   assert.equal(applied.result.passed, true);
+  await owner.perform('predict', { prediction: 'choose the named tool' });
   assert.equal((await owner.perform('answer')).state.answerUsed, true);
   assert.equal((await owner.perform('run')).result.passed, true);
   assert.equal((await owner.perform('test')).result.passed, true);
@@ -281,11 +313,14 @@ test('a source-stage creation editor write is rejected without changing its sour
   const started = await owner.perform('start');
   const checkpoint = await readFile(state, 'utf8');
   const edited = 'export function dispatch() { return "external editor change"; }';
+  // Dovetail realpath()s the workspace before staging. The payload path is that
+  // canonical file plus ".tmp-…/payload", not the mkdtemp path when tmp is a symlink.
+  const canonicalAgent = realpathSync(agent);
   const preload = join(cwd, 'preload.mjs');
   await writeFile(preload, `
 import fs from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
-const agent = ${JSON.stringify(agent)};
+const agent = ${JSON.stringify(canonicalAgent)};
 const write = fs.writeFile;
 fs.writeFile = async (path, ...args) => {
   const result = await write(path, ...args);
@@ -300,7 +335,7 @@ syncBuiltinESMExports();
   let sawEdit = false;
   let watcher;
   const editorWrite = new Promise(resolve => {
-    watcher = watch(join(agent, '..'), (event, name) => {
+    watcher = watch(join(canonicalAgent, '..'), (event, name) => {
       if (event === 'rename' && (name === 'agent.mjs.tmp' || name?.startsWith('agent.mjs.tmp-')) && !sawEdit) {
         writeFileSync(agent, edited);
         sawEdit = true;
@@ -350,11 +385,14 @@ test('killed bootstrap leaves either no published root or a complete restartable
       const preload = join(cwd, 'preload.mjs');
       await writeFile(preload, `
 import fs from 'node:fs/promises';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, realpathSync } from 'node:fs';
+import path from 'node:path';
 import { syncBuiltinESMExports } from 'node:module';
 const point = ${JSON.stringify(point)};
 const marker = ${JSON.stringify(marker)};
-const root = ${JSON.stringify(join(cwd, '.dovetail'))};
+// Dovetail realpath()s the workspace. macOS tmp is /var -> /private/var, so the rename
+// destination is the canonical path, not the path mkdtemp returned.
+const root = path.join(realpathSync(${JSON.stringify(cwd)}), '.dovetail');
 const pause = async () => { writeFileSync(marker, 'ready'); await new Promise(() => {}); };
 const write = fs.writeFile;
 fs.writeFile = async (path, ...args) => {
@@ -402,8 +440,71 @@ setInterval(() => {}, 1000);
         assert.match(published.source, /export.*dispatch/);
       }
       const restarted = await new Dovetail(cwd).perform('start');
-      assert.equal(restarted.example.passed, true);
+      assert.equal(restarted.example.passed, false);
+      assert.equal(restarted.example.observations[0].request.name, 'echo');
       assert.equal(await readFile(agent, 'utf8'), restarted.source);
     });
   }
+});
+
+test('answer opens after a prediction or a failed attempt, and reflection waits for a passing check', async t => {
+  const { owner, agent, state } = await workspace(t);
+  const started = await owner.perform('start');
+  await assert.rejects(owner.perform('answer'), /prediction or a failed attempt/);
+  await assert.rejects(owner.perform('reflect', { context: 'seen', decision: 'wait', consequences: 'later' }), /challenge/);
+  const predicted = await owner.perform('predict', { prediction: 'the first tool still runs' });
+  assert.equal(predicted.state.prediction, 'the first tool still runs');
+  assert.equal(predicted.state.failedAttempt, false);
+  const answer = await owner.perform('answer');
+  assert.equal(answer.state.answerUsed, true);
+  assert.match(answer.answer, /Unknown tool:/);
+  assert.equal(await readFile(agent, 'utf8'), started.source);
+  const passed = await owner.perform('apply', { expectedSource: started.source, source: solution });
+  assert.equal(passed.result.passed, true);
+  const reflected = await owner.perform('reflect', {
+    context: 'the request named one entry', decision: 'choose from the list', consequences: 'a missing name is reported',
+  });
+  assert.deepEqual(reflected.state.reflection, {
+    context: 'the request named one entry', decision: 'choose from the list', consequences: 'a missing name is reported',
+  });
+  assert.deepEqual(JSON.parse(await readFile(state, 'utf8')).reflection, reflected.state.reflection);
+});
+
+test('resume reruns a scored check so the saved result matches the trace', async t => {
+  const { owner, agent } = await workspace(t);
+  let view = await owner.perform('start');
+  view = await owner.perform('test');
+  assert.equal(view.result.passed, false);
+  assert.equal(view.state.lastCheck.kind, 'test');
+  await writeFile(agent, solution);
+  const resumed = await owner.perform('start');
+  assert.equal(resumed.result.passed, true);
+  assert.equal(resumed.example, undefined);
+  assert.deepEqual(resumed.state.lastCheck, { source: solution, passed: true, kind: 'test' });
+  assert.equal(resumed.checkedCurrentSource, true);
+});
+
+test('first-tool and hardcoded weather shortcuts fail; a logged solution passes', async t => {
+  const { owner } = await workspace(t);
+  let view = await owner.perform('start');
+  const shortcut = "export async function dispatch(call, tools) {\n  if (call.name === 'greet') return tools[0].execute(call.arguments);\n  throw new Error('weather');\n}\n";
+  view = await owner.perform('apply', { expectedSource: view.source, source: shortcut });
+  assert.equal(view.result.passed, false);
+  const shortcutCases = Object.fromEntries(view.result.observations.map(item => [item.request.name, item]));
+  assert.equal(shortcutCases.echo.passed, false);
+  assert.equal(shortcutCases.calendar.passed, false);
+  const firstOnly = 'export async function dispatch(call, tools) {\n  return tools[0].execute(call.arguments);\n}\n';
+  view = await owner.perform('apply', { expectedSource: view.source, source: firstOnly });
+  assert.equal(view.result.passed, false);
+  const firstCases = Object.fromEntries(view.result.observations.map(item => [item.request.name, item]));
+  assert.equal(firstCases.greet.passed, true);
+  assert.equal(firstCases.echo.passed, false);
+  assert.equal(firstCases.weather.passed, false);
+  const logged = solution.replace('export async function dispatch(call, tools) {\n', 'export async function dispatch(call, tools) {\n  console.log("debug");\n');
+  view = await owner.perform('apply', { expectedSource: view.source, source: logged });
+  assert.equal(view.result.passed, true);
+  assert.match(view.result.stdout, /debug/);
+  assert.match(view.result.observations[0].stdout, /debug/);
+  assert.equal(view.result.observations[2].request.name, 'echo');
+  assert.equal(view.result.observations[2].passed, true);
 });
