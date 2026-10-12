@@ -48,7 +48,9 @@ try {
   await assert.rejects(readFile(join(scratch, '.dovetail/project/agent.mjs')), { code: 'ENOENT' });
   await rpc({ type: 'prompt', message: '/dovetail start' });
   let messages = await rpc({ type: 'get_messages' });
-  assert.match(JSON.stringify(messages.data), /Hello, Ada!/);
+  assert.match(JSON.stringify(messages.data), /演示（不是成绩）/);
+  assert.match(JSON.stringify(messages.data), /echo/);
+  assert.doesNotMatch(JSON.stringify(messages.data), /call\.name|Unknown tool|agent-loop/);
   await rpc({ type: 'prompt', message: '/dovetail status' });
   const agent = join(scratch, '.dovetail/project/agent.mjs');
   const edited = (await readFile(agent, 'utf8')) + '\n';

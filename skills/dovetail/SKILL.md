@@ -1,19 +1,15 @@
 ---
 name: dovetail
-description: Teach the Dovetail one-tool agent lesson when /dovetail is active. Work from the learner's actual code and execution feedback.
+description: Teach the Dovetail tool-call lesson from the learner's code and execution feedback when /dovetail is active.
 disable-model-invocation: true
 ---
 
-The learner knows basic loops. Teach only how an agent dispatches one requested tool. A fresh start runs the starter example; resuming runs the learner's current saved code, which may fail or contain a syntax error. Teach from the actual execution feedback. When a trace is available, explain request, actual invocation, tool result, and final response using that trace. The fixture supplies a fixed scripted request and final response; it is not a real LLM.
+Teach this exercise from the saved code and the traces. Do not supply the implementation, the control structure, or the wording of an error. A fresh start shows a demo request that the starter does not handle. That demo is not the score. When a full check already exists, start runs it again and the saved result is that run.
 
-The original starter exports `dispatch(call, tools)` and calls `tools[0].execute(call.arguments)`. The sole tool is `greet`. The challenge is to loop through tools, match `call.name`, forward `call.arguments` to `execute`, and throw a helpful error containing the unknown tool name without invoking greet. Tests vary the greeting argument and request an unknown name. There are no quizzes, unlocks, or further lessons.
+Ask for one prediction before the first edit, and record it with the `predict` action. The learner may edit the file directly or give a complete snippet or precise logic in chat. If they have not stated the logic, do not fill it in. Use `inspect`, then `apply` with `expectedSource` set to the inspected source. Apply runs the full check. `run` repeats the demo and does not replace a full check. `test` is the only action that can pass.
 
-Invite an optional prediction or a small edit. Accept a complete short snippet or precise logic in chat. Use `dovetail inspect`, then `apply` with `expectedSource` set to the source returned by inspect and the complete edited `source`. Apply automatically tests. If translating precise logic, show the few lines and relate them to the learner's words. Do not silently solve unspecified details. Learners may also edit `.dovetail/project/agent.mjs` directly; inspect before discussing results, and test when the saved check is stale.
+Explain failures from the expected and actual observations, including the learner's own output. A passing check is evidence about those cases only. Give a hint only when asked, and keep it smaller than an implementation. Use `answer` only when the learner explicitly asks and a prediction or a failed attempt is already recorded. It returns code and does not apply it. If `answer` is refused, do not reconstruct the solution from elsewhere in the project.
 
-Use actual expected and actual observations to explain failures. Green tests prove observed behavior, never independent understanding. Give hints if requested. Use `answer` only when the learner explicitly asks for the answer; it records assistance and returns code without applying it. Never automatically reveal the solution. A learner who requests it can then ask to apply it. `answerUsed` does not measure mastery.
+After the full check passes on the current source, later context names a comparison file and asks for a reflection with context, decision, and consequences. Record that reflection with `reflect`. Do not claim a sandbox. Runs use a fresh Node child with a timeout and an output limit, for trusted learner code.
 
-An explicit request to write the answer and apply it already authorizes both actions; use answer, inspect, and apply without a second confirmation. A show-only request uses answer without apply. Reduce help as the learner succeeds, and explain unfamiliar functions or objects only when needed.
-
-Reference the real Pi v1.1 lookup and missing-tool handling in [agent-loop.ts](https://github.com/earendil-works/pi/blob/abe508e1b89912adde45528136c3221eb69acdd7/packages/agent/src/agent-loop.ts#L716). The execution call is in the same file near line 832. Local optional reference is `references/sources/pi-official/packages/agent/src/agent-loop.ts` in the source checkout. Explain only the relevant lookup, not the whole Pi loop. The lesson fixture is original code, not a copied agent loop.
-
-`/dovetail off` pauses the lesson while preserving code and checkpoint. `/dovetail start` resumes it. Ordinary Pi tools remain available. Do not claim access to a sandbox: runs use a fresh Node child with bounded output, a timeout, and a minimal environment, for trusted learner code.
+`/dovetail off` pauses and keeps the files. `/dovetail start` resumes. Ordinary Pi tools remain available.
